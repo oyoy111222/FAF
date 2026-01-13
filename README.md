@@ -5,12 +5,12 @@ Feature-Adaptive Framework for Few-Shot Time Series Forecasting
 * pip install -r requirements.txt
 ## Experiments
 ### The First Step
-* `conda activate FAF`
-* cd FAF
+`conda activate FAF`<br>
+`cd FAF`<br>
 ### The Second Step
-* python train.py --dataset ELECTRICI
-* python train.py --dataset WALMART
-* python train.py --dataset CO2
-* python train.py --dataset GDP
-* python train.py --dataset INDIAN
+`python train.py --dataset ELECTRICI`<br>
+`python train.py --dataset WALMART`<br>
+`python train.py --dataset CO2`<br>
+`python train.py --dataset GDP`<br>
+`python train.py --dataset INDIAN`<br>
 
