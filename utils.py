@@ -11,13 +11,13 @@ def set_random_seed(seed):
     """
     设置随机种子，保证每次训练可重复。
     """
-    random.seed(seed)  # 训练数据的打乱、随机选择任务
-    np.random.seed(seed)  # 随机选择数据、数据集划分
-    torch.manual_seed(seed) #  CPU上的随机种子,模型的参数初始化
-    torch.cuda.manual_seed(seed) # GPU 上的随机种子,模型的参数初始化
-    torch.cuda.manual_seed_all(seed)  # 设置多GPU随机种子，确保多卡训练时的随机性一致
-    torch.backends.cudnn.deterministic = True  # 确保每次训练结果一致
-    torch.backends.cudnn.benchmark = False  # 禁用 cudnn 自动优化，确保每次训练结果一致
+    random.seed(seed)  
+    np.random.seed(seed) 
+    torch.manual_seed(seed) 
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  
+    torch.backends.cudnn.deterministic = True  
+    torch.backends.cudnn.benchmark = False  
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters())
@@ -44,10 +44,6 @@ class StandardScaler():
         self.target_column = args.target_column
 
     def fit(self, data):
-        """
-        拟合训练数据，计算均值和标准差
-        data 是任务的列表，每个任务是一个 Pandas DataFrame
-        """
         # 计算每个任务的均值和标准差
         all_data = pd.concat([task.iloc[:, 1] for task in data], axis=0)  # 假设目标列是第二列
         self.mean = all_data.mean()
@@ -56,40 +52,31 @@ class StandardScaler():
     def transform(self, data):
         """
         对数据进行标准化
-        data 是任务的列表，每个任务是一个 Pandas DataFrame
         """
         normalized_data = []
         task_target_data = data[self.target_column]
         normalized_task_data = (task_target_data - self.mean) / self.std
-        # 获取每个任务的 DataFrame
         normalized_task = data.copy()
-        normalized_task[self.target_column] = normalized_task_data  # 更新目标列为标准化后的数据
-        # 将更新后的任务数据加入列表
+        normalized_task[self.target_column] = normalized_task_data 
         normalized_data.append(normalized_task)
         return normalized_data
 
     def inverse_transform(self, data):
-        """
-        对数据进行反标准化
-        """
         restored_data = []
-        task_data = data[self.target_column] # 目标列数据
+        task_data = data[self.target_column] 
         restored_task_data = (task_data * self.std) + self.mean
         restored_task = data.copy()
-        restored_task[self.target_column] = restored_task_data  # 更新目标列为反标准化后的数据
+        restored_task[self.target_column] = restored_task_data  
         restored_data.append(restored_task)
         return restored_data
 
 def split_data(data, input_window_size, split_ratio=1/2):
-    # 检查 data 是否是列表，并且列表中包含一个 DataFrame
     if isinstance(data, list):
         if len(data) == 1 and isinstance(data[0], pd.DataFrame):
-            # 如果是单一的 DataFrame
-            data = data[0]  # 提取出 DataFrame
+            data = data[0]  
         else:
             raise ValueError("Expected a list containing a single DataFrame")
     
-    # 确保 data 是一个 DataFrame，进行数据划分
     split_idx = int(len(data) * split_ratio)
     split_idx2 = split_idx - input_window_size
     return [data[:split_idx]], [data[split_idx2:]]
@@ -102,12 +89,7 @@ def truncate_tasks_samples(train_tasks, val_tasks, test_tasks, train_samples=Non
             if max_samples is None:
                 processed.append(df)
                 continue
-            """ 
-            if len(df) < max_samples:
-                raise ValueError(
-                    f"任务数据不足: 需要 {max_samples} 样本，但只有 {len(df)} 个"
-                )
-            """  
+
             truncated = df.iloc[:max_samples] # 自动处理 len(df) < max_samples 的情况
             processed.append(truncated)
         return processed
@@ -121,8 +103,6 @@ def truncate_tasks_samples(train_tasks, val_tasks, test_tasks, train_samples=Non
 # 数据标准化
 def standardize_data(train_tasks, val_tasks, test_tasks, args: ModelArgs):
     scaler = StandardScaler(args)
-
-    # 对训练集数据拟合并转换
     scaler.fit(train_tasks)
 
     # 分别对训练集、验证集、测试集进行标准化
@@ -140,11 +120,11 @@ def sliding_window(data, input_window_size, output_window_size, time_column, tar
     targets = []
     
     for i in range(len(data) - input_window_size - output_window_size + 1):
-        input_data = data.iloc[i:i + input_window_size][target_column].values  # 只取目标列进行预测
-        input_tensor = torch.tensor(input_data, dtype=torch.float32).unsqueeze(1)  # 转换为 tensor
+        input_data = data.iloc[i:i + input_window_size][target_column].values 
+        input_tensor = torch.tensor(input_data, dtype=torch.float32).unsqueeze(1) 
         
         target_data = data.iloc[i + input_window_size:i + input_window_size + output_window_size][target_column].values
-        target_tensor = torch.tensor(target_data, dtype=torch.float32).unsqueeze(1)  # 转换为 tensor
+        target_tensor = torch.tensor(target_data, dtype=torch.float32).unsqueeze(1) 
         
         inputs.append(input_tensor)
         targets.append(target_tensor)
@@ -157,7 +137,7 @@ def sliding_window(data, input_window_size, output_window_size, time_column, tar
 
 class TimeSeriesDataset(Dataset):
     """
-    时间序列数据集类，结合了滑动窗口操作，适合用于训练和测试。
+    滑动窗口操作
     """
     def __init__(self, data, input_window_size, output_window_size, time_column, target_column):
         self.data = data
