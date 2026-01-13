@@ -1,4 +1,3 @@
-#train.py
 import os
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8' 
 import torch
@@ -42,10 +41,10 @@ with open('config.json', 'r') as f:
     config = json.load(f)
 
 # 选择数据集
-dataset_name = args.dataset  # 从命令行参数获取数据集
+dataset_name = args.dataset  
 dataset_config = config[dataset_name]
 seed = dataset_config["seed"] 
-set_random_seed(seed)  # 设置随机种子
+set_random_seed(seed)  
 inner_steps = dataset_config["inner_steps"]  
 lr    = dataset_config["lr"]  
 inner_lr    = dataset_config["inner_lr"] 
@@ -91,19 +90,8 @@ else:
     data = load_gdp_data(dataset_config) 
 
 # 获取所有任务的输入数据
-task_names = [task[0] for task in data]  # 每个任务的名称
-all_data = [task[1] for task in data]  # 所有任务的数据
-"""
-# 检查并输出数据为空的任务名称
-for task_name, task_data in zip(task_names, all_data):
-    # 检查是否是 DataFrame 类型
-    if isinstance(task_data, pd.DataFrame):
-        if len(task_data) != 12:
-            print(f"Task '{task_name}' has {len(task_data)} data points, which is not equal to 12.")
-    # 如果 task_data 不是 DataFrame，使用 len() 检查是否为空
-    elif len(task_data) != 12:
-        print(f"Task '{task_name}' has {len(task_data)} data points, which is not equal to 12.")
-"""
+task_names = [task[0] for task in data]  
+all_data = [task[1] for task in data]  
         
 # 按任务划分训练集、验证集和测试集
 train_tasks, test_val_tasks = train_test_split(all_data, test_size=0.2, random_state=seed)  # 80% 训练集
@@ -130,8 +118,6 @@ train_tasks, val_tasks, test_tasks = truncate_tasks_samples(train_tasks, val_tas
 # 对训练集、验证集和测试集进行标准化
 train_data, val_data, test_data = standardize_data(train_tasks, val_tasks, test_tasks, args)
 
-
-#print(test_data)
 # 优化器和损失函数
 #optimizer = optim.Adam(model.parameters(), lr=1e-4)
 criterion = torch.nn.MSELoss()
@@ -184,55 +170,34 @@ for epoch in range(num_epochs):
         #print(train_loader)
         #print(f"num_batches:{num_batches}")
         for batch_x, batch_y in train_loader:
-            # batch_x, batch_y = standardize(batch_x, batch_y)
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-            #print(batch_x)
 
-            # **MAML 内部循环：更新共享专家**
-            #fast_weights = [p.detach().clone().requires_grad_(True) for p in model.shared_experts.parameters()]
             for _ in range(inner_steps):
-                outputs = model(batch_x, task_id, shared_params=fast_weights)  # 使用 fast_weights 计算
-                loss_inner = criterion(outputs, batch_y)  # 计算损失
+                outputs = model(batch_x, task_id, shared_params=fast_weights)  
+                loss_inner = criterion(outputs, batch_y)  
                 loss_inner.backward(retain_graph=True)
-
-                #print("梯度是否存在:", any(w.grad is not None for w in fast_weights))
-                #print("更新前:", fast_weights[0][0].detach().cpu().numpy().round(8))
                 with torch.no_grad():
                     for i, w in enumerate(fast_weights):
                         if w.grad is not None:
                             w -= inner_lr * w.grad
                         w.grad = None
-                #print("更新后:", fast_weights[0][0].detach().cpu().numpy().round(8))
-                """
-                with torch.autograd.set_grad_enabled(True):
-                    grads = torch.autograd.grad(loss_inner, fast_weights, allow_unused=True, retain_graph=False, create_graph=False)
-                grads = [g if g is not None else torch.zeros_like(w) for w, g in zip(fast_weights, grads)]
-                fast_weights = [w - inner_lr * g for w, g in zip(fast_weights, grads)]
-                """
-            # **外部循环：使用 MAML 计算的共享专家更新参数，同时训练 Gate 和路由专家**
 
-            outputs = model(batch_x, task_id, shared_params=fast_weights)  # 使用更新后的 fast_weights
+            outputs = model(batch_x, task_id, shared_params=fast_weights) 
 
-            # 计算损失
-            gate_weights = model.gate.weight  # 获取 gate 层的权重
-            indices = model.gate(batch_x)[1]  # 获取 gate 层的 indices
+            gate_weights = model.gate.weight  
+            indices = model.gate(batch_x)[1]  
             #loss = criterion(outputs, batch_y)
             batch_counts = torch.bincount(indices.flatten(), minlength=model.n_routed_experts)
             model.global_counts += batch_counts.to(device=model.global_counts.device)
             model.total_selections += indices.numel()  # indices.numel() = batch_size * topk
             loss = total_loss(outputs, batch_y, model.global_counts.detach(), model.total_selections.detach(), model.n_routed_experts, load_balance_lambda)
-            
-            # 先计算共享专家梯度
-            #loss.backward(retain_graph=True)
-    
             loss.backward(retain_graph=True)  
 
-            # 参数更新
             optimizer_gate_routed.step()
             optimizer_gate_routed.zero_grad()
 
             for param, fast_param in zip(model.shared_experts.parameters(), fast_weights):
-                if fast_param.grad is not None:  # 这里应该为 True
+                if fast_param.grad is not None:  
                     if param.grad is None:
                         param.grad = fast_param.grad.detach().clone().to(param.device)
                     else:
@@ -241,45 +206,24 @@ for epoch in range(num_epochs):
             
             with torch.no_grad():
                 for i, p in enumerate(model.shared_experts.parameters()):
-                    # 关键修改：处理 None 梯度
                     if p.grad is not None:
                         total_inner_grads[i] += p.grad.detach().clone().cpu().to(device)
                     else:
-                        # 使用预分配的 total_inner_grads 的形状初始化零张量
                         total_inner_grads[i] += torch.zeros_like(total_inner_grads[i]).to(device)
             
-            
-            """
-            # 梯度累积
-            with torch.no_grad():
-                for i, p in enumerate(model.shared_experts.parameters()):
-                    total_inner_grads[i] += p.grad.detach().clone().cpu().to(device)
-            """
-            # 记录到 TensorBoard
             writer.add_scalar('Loss/train', loss.item(), epoch)
             writer.add_scalar('RMSE/train', rmse(outputs.detach().cpu().numpy(), batch_y.detach().cpu().numpy()), epoch)
             writer.add_scalar('MAE/train', mae(outputs.detach().cpu().numpy(), batch_y.detach().cpu().numpy()), epoch)
             writer.add_scalar('MAPE/train', mape(outputs.detach().cpu().numpy(), batch_y.detach().cpu().numpy()), epoch)
-        """
-        #print(f"count: {count}")
-        # 在外循环中使用累积的梯度来更新共享专家的参数
-        optimizer_shared.zero_grad()
-        for i, p in enumerate(model.shared_experts.parameters()):
-            p.grad = total_inner_grads[i] / num_batches # 设置为所有任务的梯度的平均值
-        # 梯度裁剪（限制梯度范数不超过1.0）
-        #torch.nn.utils.clip_grad_norm_(model.shared_experts.parameters(), max_norm=1.0)
-        optimizer_shared.step()
-        """
 
     for i, p in enumerate(model.shared_experts.parameters()):
-         p.grad = total_inner_grads[i] / len(train_data) # 设置为所有任务的梯度的平均值
+         p.grad = total_inner_grads[i] / len(train_data)
 
     optimizer_shared.step()
     optimizer_shared.zero_grad()
 
     # 保存模型的训练后状态
     trained_model_state_dict = model.state_dict()
-    # 保存训练时的全局统计状态
     original_global_counts = model.global_counts.clone()
     original_total_selections = model.total_selections.clone()
 
@@ -287,59 +231,39 @@ for epoch in range(num_epochs):
     model.eval()
     val_loss = 0
     total_inner_grads = [torch.zeros_like(p) for p in model.shared_experts.parameters()]
-    # 对验证集中的所有任务进行操作
     for task_id, task_data in enumerate(val_data):
-        # 对每个任务进行 1/3 数据点用于快速适应
-        val_task_data, val_eval_data = split_data(task_data, input_window_size=dataset_config["input_window_size"])  # 拆分数据为训练（1/3）和评估（2/3）
-        # 创建任务的数据加载器
+        val_task_data, val_eval_data = split_data(task_data, input_window_size=dataset_config["input_window_size"]) 
         val_dataset = TimeSeriesDataset(val_task_data, dataset_config["input_window_size"], dataset_config["output_window_size"], dataset_config["time_column"], dataset_config["target_column"])
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0, worker_init_fn=seed_worker)
         fast_weights = [p.detach().clone().requires_grad_(True) for p in model.shared_experts.parameters()]
         num_batches = len(val_loader)
         for batch_x, batch_y in val_loader:
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-
-            # **MAML 内部循环：更新共享专家**
             #fast_weights = [p.detach().clone().requires_grad_(True) for p in model.shared_experts.parameters()]
             for _ in range(inner_steps):
-                outputs = model(batch_x, task_id, shared_params=fast_weights)  # 使用 fast_weights 计算
-                loss_inner = criterion(outputs, batch_y)  # 计算损失
+                outputs = model(batch_x, task_id, shared_params=fast_weights)  
+                loss_inner = criterion(outputs, batch_y)
                 loss_inner.backward(retain_graph=True)
                 with torch.no_grad():
                     for i, w in enumerate(fast_weights):
                         if w.grad is not None:
                             w -= inner_lr * w.grad
                         w.grad = None
-                """
-                with torch.autograd.set_grad_enabled(True):
-                    grads = torch.autograd.grad(loss_inner, fast_weights, allow_unused=True, retain_graph=False, create_graph=False)
-                grads = [g if g is not None else torch.zeros_like(w) for w, g in zip(fast_weights, grads)]
-                fast_weights = [w - inner_lr * g for w, g in zip(fast_weights, grads)]
-                """
-            # **外部循环：使用 MAML 计算的共享专家更新参数，同时训练 Gate 和路由专家**
-            outputs = model(batch_x, task_id, shared_params=fast_weights)  # 使用更新后的 fast_weights
-
-            # 计算损失
-            gate_weights = model.gate.weight  # 获取 gate 层的权重
-            indices = model.gate(batch_x)[1]  # 获取 gate 层的 indices
+            outputs = model(batch_x, task_id, shared_params=fast_weights)  
+            gate_weights = model.gate.weight  
+            indices = model.gate(batch_x)[1]  
             #loss = criterion(outputs, batch_y)
             batch_counts = torch.bincount(indices.flatten(), minlength=model.n_routed_experts)
             val_global_counts = model.global_counts.detach() + batch_counts.to(device)
             val_total_selections = model.total_selections.detach() + indices.numel()
             loss = total_loss(outputs, batch_y, val_global_counts, val_total_selections,model.n_routed_experts,load_balance_lambda)
-    
-            # 先计算共享专家梯度
-            #loss.backward(retain_graph=True)
-    
-            # 再计算路由专家梯度
+
             loss.backward(retain_graph=True)  
-    
-            # 参数更新
             optimizer_gate_routed.step()
             optimizer_gate_routed.zero_grad()
 
             for param, fast_param in zip(model.shared_experts.parameters(), fast_weights):
-                if fast_param.grad is not None:  # 这里应该为 True
+                if fast_param.grad is not None: 
                     if param.grad is None:
                         param.grad = fast_param.grad.detach().clone().to(param.device)
                     else:
@@ -347,23 +271,20 @@ for epoch in range(num_epochs):
 
             with torch.no_grad():
                 for i, p in enumerate(model.shared_experts.parameters()):
-                    # 关键修改：处理 None 梯度
                     if p.grad is not None:
                         total_inner_grads[i] += p.grad.detach().clone().cpu().to(device)
                     else:
-                        # 使用预分配的 total_inner_grads 的形状初始化零张量
                         total_inner_grads[i] += torch.zeros_like(total_inner_grads[i]).to(device)
 
-        # 在外循环中使用累积的梯度来更新共享专家的参数
         for i, p in enumerate(model.shared_experts.parameters()):
-            p.grad = total_inner_grads[i] / num_batches  # 设置为所有任务的梯度的平均值
+            p.grad = total_inner_grads[i] / num_batches  
         optimizer_shared.step()
         optimizer_shared.zero_grad()
 
-        # 评估阶段：在剩余的 2/3 数据点上计算评估指标
+        # 评估阶段
         val_eval_dataset = TimeSeriesDataset(val_eval_data, dataset_config["input_window_size"], dataset_config["output_window_size"], dataset_config["time_column"], dataset_config["target_column"])
         val_eval_loader = DataLoader(val_eval_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0, worker_init_fn=seed_worker)
-        # 使用更新后的共享专家进行评估
+
         with torch.no_grad():
             for batch_x, batch_y in val_eval_loader:
                 batch_x, batch_y = batch_x.to(device), batch_y.to(device)
@@ -371,7 +292,7 @@ for epoch in range(num_epochs):
                 loss = criterion(outputs, batch_y)
                 val_loss += loss.item()
 
-        val_loss /= len(val_eval_loader)  # 计算平均损失
+        val_loss /= len(val_eval_loader)  
 
         # 恢复模型参数到训练后的状态
         model.load_state_dict(trained_model_state_dict)
@@ -387,7 +308,6 @@ for epoch in range(num_epochs):
 
 # 保存模型的训练后状态
 trained_model_state_dict = model.state_dict()
-# 保存训练时的全局统计状态
 original_global_counts = model.global_counts.clone()
 original_total_selections = model.total_selections.clone()
 
@@ -397,11 +317,9 @@ test_loss = 0
 test_rmse = 0
 test_mae = 0
 test_mape = 0
-# 对测试集中的所有任务进行操作
+
 for task_id, task_data in enumerate(test_data):
-    # 对每个任务进行 1/3 数据点用于快速适应
-    test_task_data, test_eval_data = split_data(task_data, input_window_size=dataset_config["input_window_size"])  # 拆分数据为训练（1/3）和评估（2/3）
-    # 创建任务的数据加载器
+    test_task_data, test_eval_data = split_data(task_data, input_window_size=dataset_config["input_window_size"]) 
     total_inner_grads = [torch.zeros_like(p) for p in model.shared_experts.parameters()]
     test_dataset = TimeSeriesDataset(test_task_data, dataset_config["input_window_size"], dataset_config["output_window_size"], dataset_config["time_column"], dataset_config["target_column"])
     test_loader = DataLoader(test_dataset, batch_size=dataset_config["batch_size"], shuffle=False, drop_last=True, num_workers=0, worker_init_fn=seed_worker)
@@ -410,46 +328,35 @@ for task_id, task_data in enumerate(test_data):
     for batch_x, batch_y in test_loader:
         batch_x, batch_y = batch_x.to(device), batch_y.to(device)
 
-        # **MAML 内部循环：更新共享专家**
         #fast_weights = [p.detach().clone().requires_grad_(True) for p in model.shared_experts.parameters()]
         for _ in range(inner_steps):
-            outputs = model(batch_x, task_id, shared_params=fast_weights)  # 使用 fast_weights 计算
-            loss_inner = criterion(outputs, batch_y)  # 计算损失
+            outputs = model(batch_x, task_id, shared_params=fast_weights)  
+            loss_inner = criterion(outputs, batch_y)
             loss_inner.backward(retain_graph=True)
             with torch.no_grad():
                 for i, w in enumerate(fast_weights):
                     if w.grad is not None:
                         w -= inner_lr * w.grad
                     w.grad = None
-            """
-            with torch.autograd.set_grad_enabled(True):
-                grads = torch.autograd.grad(loss_inner, fast_weights, allow_unused=True, retain_graph=False, create_graph=False)
-            grads = [g if g is not None else torch.zeros_like(w) for w, g in zip(fast_weights, grads)]
-            fast_weights = [w - inner_lr * g for w, g in zip(fast_weights, grads)]
-            """
-        outputs = model(batch_x, task_id, shared_params=fast_weights)  # 使用更新后的 fast_weights
+
+        outputs = model(batch_x, task_id, shared_params=fast_weights) 
 
         # 计算损失
-        gate_weights = model.gate.weight  # 获取 gate 层的权重
-        indices = model.gate(batch_x)[1]  # 获取 gate 层的 indices
+        gate_weights = model.gate.weight  
+        indices = model.gate(batch_x)[1]  
         #loss = criterion(outputs, batch_y)
         batch_counts = torch.bincount(indices.flatten(), minlength=model.n_routed_experts)
         model.global_counts += batch_counts.to(device=model.global_counts.device)
         model.total_selections += indices.numel()  # indices.numel() = batch_size * topk
         loss = total_loss(outputs, batch_y, model.global_counts.detach(), model.total_selections.detach(), model.n_routed_experts, load_balance_lambda)
     
-        # 先计算共享专家梯度
-        #loss.backward(retain_graph=True)
-    
-        # 再计算路由专家梯度
         loss.backward(retain_graph=True)  
         
-        # 参数更新
         optimizer_gate_routed.step()
         optimizer_gate_routed.zero_grad()
 
         for param, fast_param in zip(model.shared_experts.parameters(), fast_weights):
-            if fast_param.grad is not None:  # 这里应该为 True
+            if fast_param.grad is not None:  
                 if param.grad is None:
                     param.grad = fast_param.grad.detach().clone().to(param.device)
                 else:
@@ -457,23 +364,19 @@ for task_id, task_data in enumerate(test_data):
 
         with torch.no_grad():
             for i, p in enumerate(model.shared_experts.parameters()):
-                # 关键修改：处理 None 梯度
                 if p.grad is not None:
                     total_inner_grads[i] += p.grad.detach().clone().cpu().to(device)
                 else:
-                    # 使用预分配的 total_inner_grads 的形状初始化零张量
                     total_inner_grads[i] += torch.zeros_like(total_inner_grads[i]).to(device)
 
-    # 在外循环中使用累积的梯度来更新共享专家的参数
     for i, p in enumerate(model.shared_experts.parameters()):
-        p.grad = total_inner_grads[i] / num_batches  # 设置为当前任务的梯度的平均值
+        p.grad = total_inner_grads[i] / num_batches  
     optimizer_shared.step()
     optimizer_shared.zero_grad()
-    # 评估阶段：在剩余的 2/3 数据点上计算评估指标
+    # 评估阶段
     test_eval_dataset = TimeSeriesDataset(test_eval_data, dataset_config["input_window_size"], dataset_config["output_window_size"], dataset_config["time_column"], dataset_config["target_column"])
     test_eval_loader = DataLoader(test_eval_dataset, batch_size=dataset_config["batch_size"], shuffle=False, drop_last=True, num_workers=0, worker_init_fn=seed_worker)
 
-    # 使用更新后的共享专家进行评估
     with torch.no_grad():
         print(f"batch:{len(test_eval_loader)}")
         for batch_x, batch_y in test_eval_loader:
@@ -489,17 +392,14 @@ for task_id, task_data in enumerate(test_data):
             test_mae += mae(outputs.detach().cpu().numpy(), batch_y.detach().cpu().numpy())
             test_mape += mape(outputs.detach().cpu().numpy(), batch_y.detach().cpu().numpy())
 
-    # 恢复模型参数到训练后的状态
     model.load_state_dict(trained_model_state_dict)
     model.global_counts.copy_(original_global_counts)
     model.total_selections.copy_(original_total_selections)
     
-
-# 计算平均损失
 print(f"测试任务数:{len(test_data)}")
-num_test = len(test_data)  # 所有任务都参与测试
+num_test = len(test_data)  
 num_batch = num_test * len(test_eval_loader)
-test_loss /= num_batch # 平均损失
+test_loss /= num_batch 
 test_rmse /= num_batch
 test_mae /= num_batch
 test_mape /= num_batch
@@ -520,15 +420,3 @@ print(f"Total Parameters: {total_params} ")
 
 active_params = active_parameters(model, top_k, n_routed_experts)
 print(f"Active Parameters: {active_params} ") 
-
-"""
-
-            for p in model.experts.parameters():
-                if p.grad is None:
-                    print(f"参数 {p.shape} 梯度未计算！")
-                else:
-                    print(f"参数 {p.shape} 梯度均值: {p.grad.mean().item():.4f}")
-            non_none_grads = sum(1 for p in model.experts.parameters() if p.grad is not None)
-            print(f"非空梯度参数比例: {non_none_grads}/{len(list(model.experts.parameters()))}")
-            print("更新前:", fast_weights[0][:5])  # 打印前5个元素
-"""
