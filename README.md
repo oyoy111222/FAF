@@ -5,7 +5,7 @@ Feature-Adaptive Framework for Few-Shot Time Series Forecasting
 * pip install -r requirements.txt
 ## Experiments
 ### The First Step
-* conda activate FAF
+* `conda activate FAF`
 * cd FAF
 ### The Second Step
 * python train.py --dataset ELECTRICI
