@@ -45,7 +45,7 @@ class StandardScaler():
 
     def fit(self, data):
         # 计算每个任务的均值和标准差
-        all_data = pd.concat([task.iloc[:, 1] for task in data], axis=0)  # 假设目标列是第二列
+        all_data = pd.concat([task.iloc[:, 1] for task in data], axis=0)  
         self.mean = all_data.mean()
         self.std = all_data.std()
 
@@ -70,7 +70,7 @@ class StandardScaler():
         restored_data.append(restored_task)
         return restored_data
 
-def split_data(data, input_window_size, split_ratio=1/2):
+def split_data(data, input_window_size, split_ratio=2/3):
     if isinstance(data, list):
         if len(data) == 1 and isinstance(data[0], pd.DataFrame):
             data = data[0]  
