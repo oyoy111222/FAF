@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from collections import defaultdict
-from moe_model import MoE, ModelArgs, Shared_Expert, Expert, Gate
+from model import MoE, ModelArgs, Shared_Expert, Expert, Gate
 from data_loader import *
 from utils import *
 from torch.utils.data import DataLoader
